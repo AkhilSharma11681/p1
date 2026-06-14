@@ -58,6 +58,17 @@ export default function LandingPage() {
         {/* ... (keeping your original content below) */}
 
 
+
+        <section style={{marginTop:"50px", textAlign:"center"}}>
+          <div style={{display:"flex",justifyContent:"center",gap:"20px",flexWrap:"wrap"}}>
+            <span>✓ No Signup</span>
+            <span>✓ Anonymous</span>
+            <span>✓ Free</span>
+            <span>✓ Instant Matching</span>
+          </div>
+        </section>
+
+
         <section style={{marginTop:"60px"}}>
           <h2>Why Choose Omeglev?</h2>
 

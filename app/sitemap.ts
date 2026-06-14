@@ -16,5 +16,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/blog/chat-with-strangers`, lastModified: new Date(), priority: 0.9 },
     { url: `${base}/blog/sites-like-omegle`, lastModified: new Date(), priority: 0.9 },
     { url: `${base}/blog/anonymous-chat`, lastModified: new Date(), priority: 0.9 },
+    { url: `${base}/blog/talk-to-strangers-online`, lastModified: new Date(), priority: 0.9 },
   ];
 }
