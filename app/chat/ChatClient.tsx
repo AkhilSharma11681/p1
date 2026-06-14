@@ -74,8 +74,16 @@ export default function ChatClient() {
       listenForMessages(generatedRoomId);
     } else {
       await supabase.from("chat_queue").upsert({ user_id: userId, status: "waiting", matched_with: null });
-      setTimeout(() => {
-        if (status === "waiting") connectToBot();
+      setTimeout(async () => {
+        const { data } = await supabase
+          .from("chat_queue")
+          .select("status")
+          .eq("user_id", userId)
+          .single();
+
+        if (data?.status === "waiting") {
+          connectToBot();
+        }
       }, 3500);
     }
   };
@@ -91,7 +99,7 @@ export default function ChatClient() {
 
   const listenForMessages = (activeRoomId: string) => {
     if (chatListenerRef.current) supabase.removeChannel(chatListenerRef.current);
-    chatListenerRef.current = supabase.channel(`room-${activeRoomId}`)
+    chatListenerRef.current = supabase.channel(activeRoomId)
       .on("broadcast", { event: "shout" }, (payload: any) => {
         if (payload.payload.senderId !== userId && payload.payload.type === "msg") {
           setMessages((prev) => [...prev, { sender: "stranger", text: payload.payload.text }]);
@@ -102,6 +110,11 @@ export default function ChatClient() {
   };
 
   const sendMessage = () => {
+    if (status !== "matched" && status !== "bot") {
+      alert("Please wait until connected.");
+      return;
+    }
+
     if (!message.trim()) return;
     const text = message.trim();
     setMessages((prev) => [...prev, { sender: "you", text }]);
@@ -213,11 +226,12 @@ export default function ChatClient() {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-            placeholder={isBot ? "Chatting with AI Bot..." : "Type message..."}
+            disabled={status !== "matched" && status !== "bot"}
+            placeholder={isBot ? "Chatting with AI Bot..." : "Wait until connected..."}
             style={{ flex: 1, padding: "12px 16px", backgroundColor: "#0f172a", border: "1px solid #475569", borderRadius: "12px", color: "#fff", fontSize: "16px" }}
           />
           
-          <button onClick={sendMessage} style={{ padding: "0 24px", backgroundColor: "#2563eb", color: "white", border: "none", borderRadius: "12px", fontWeight: "bold" }}>Send</button>
+          <button onClick={sendMessage} disabled={status !== "matched" && status !== "bot"} style={{ padding: "0 24px", backgroundColor: "#2563eb", color: "white", border: "none", borderRadius: "12px", fontWeight: "bold" }}>Send</button>
         </div>
 
         <div style={{ display: "flex", justifyContent: "center", gap: "16px", marginTop: "12px" }}>
