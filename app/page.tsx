@@ -3,15 +3,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 export default function LandingPage() {
-  const [onlineCount, setOnlineCount] = useState(142);
+  const [onlineCount] = useState<number | null>(null);
   const [interests, setInterests] = useState("");
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setOnlineCount((prev) => Math.max(87, prev + Math.floor(Math.random() * 4) - 1));
-    }, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  
 
   return (
     <div style={{ backgroundColor: "#0f172a", color: "#f8fafc", minHeight: "100vh", fontFamily: "system-ui,-apple-system,sans-serif" }}>
@@ -26,7 +21,7 @@ export default function LandingPage() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", backgroundColor: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", padding: "6px 12px", borderRadius: "20px" }}>
           <span style={{ height: "8px", width: "8px", backgroundColor: "#10b981", borderRadius: "50%", display: "inline-block", animation: "pulse 2s infinite" }} />
-          <span style={{ fontSize: "12px", fontWeight: "bold", color: "#34d399" }}>{onlineCount.toLocaleString()} Online Now</span>
+          <span style={{ fontSize: "12px", fontWeight: "bold", color: "#34d399" }}>{onlineCount ? `${onlineCount.toLocaleString()} Online Now` : "Anonymous Chat"}</span>
         </div>
       </header>
 
@@ -61,6 +56,17 @@ export default function LandingPage() {
 
         {/* Rest of your existing sections (features, FAQ, etc.) remain the same */}
         {/* ... (keeping your original content below) */}
+
+        <section style={{marginTop:"60px"}}>
+          <h2>Popular Guides</h2>
+
+          <ul style={{lineHeight:"2"}}>
+            <li><Link href="/blog/omegle-alternative">Best Omegle Alternative</Link></li>
+            <li><Link href="/blog/random-chat">Random Chat Online</Link></li>
+            <li><Link href="/blog/chat-with-strangers">Chat With Strangers Safely</Link></li>
+          </ul>
+        </section>
+
       </main>
 
       {/* Footer - same */}
