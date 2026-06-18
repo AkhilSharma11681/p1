@@ -14,14 +14,14 @@ const supabase = createClient(
 );
 
 const botResponses = [
-  "Hey! How's it going? 😊", "What are your hobbies?", "I'm into gaming, what about you?",
+  "Hey! How is it going? 😊", "What are your hobbies?", "I am into gaming, what about you?",
   "Favorite music genre?", "This is fun 😂", "Where are you from?", "Do you like movies?"
 ];
 
 export default function ChatClient() {
   const searchParams = useSearchParams();
   const interests = searchParams.get("interests") || "";
-  
+
   const [userId] = useState(() => uuidv4());
   const [status, setStatus] = useState<"idle" | "waiting" | "matched" | "bot">("idle");
   const [roomId, setRoomId] = useState<string | null>(null);
@@ -33,8 +33,15 @@ export default function ChatClient() {
 
   const pollingRef = useRef<any>(null);
   const chatListenerRef = useRef<any>(null);
+  const queueListenerRef = useRef<any>(null);
+  const botTimeoutRef = useRef<any>(null);
+  const statusRef = useRef(status);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -49,9 +56,52 @@ export default function ChatClient() {
 
   useEffect(() => { scrollToBottom(); }, [messages]);
 
-  const startMatchmaking = async () => {
-    setStatus("waiting");
-    setMessages([{ sender: "system", text: interests ? `🔍 Finding someone interested in ${interests}...` : "🔍 Looking for a stranger..." }]);
+  const listenForOwnMatch = (myUserId: string) => {
+    if (queueListenerRef.current) {
+      supabase.removeChannel(queueListenerRef.current);
+      queueListenerRef.current = null;
+    }
+
+    queueListenerRef.current = supabase
+      .channel(`queue-watch-${myUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chat_queue",
+          filter: `user_id=eq.${myUserId}`,
+        },
+        (payload: any) => {
+          const row = payload.new;
+          if (row?.status === "matched" && row?.matched_with) {
+            if (botTimeoutRef.current) {
+              clearTimeout(botTimeoutRef.current);
+              botTimeoutRef.current = null;
+            }
+            setRoomId(row.matched_with);
+            setStatus("matched");
+            setIsBot(false);
+            setMessages([{ sender: "system", text: "🤝 Connected! Say hi 👋" }]);
+            listenForMessages(row.matched_with);
+          }
+        }
+      )
+      .subscribe();
+  };
+
+  const startMatchmaking = async (isRetry = false) => {
+    if (!isRetry) {
+      setStatus("waiting");
+      setMessages([{ sender: "system", text: interests ? `🔍 Finding someone interested in ${interests}...` : "🔍 Looking for a stranger..." }]);
+
+      listenForOwnMatch(userId);
+
+      const jitter = 150 + Math.floor(Math.random() * 350);
+      await new Promise((resolve) => setTimeout(resolve, jitter));
+
+      if (statusRef.current !== "waiting") return;
+    }
 
     const { data: waitingUsers } = await supabase
       .from("chat_queue")
@@ -63,10 +113,22 @@ export default function ChatClient() {
     if (waitingUsers && waitingUsers.length > 0) {
       const partnerId = waitingUsers[0].user_id;
       const generatedRoomId = `room-${[userId, partnerId].sort().join("-")}`;
-      
-      await supabase.from("chat_queue").update({ status: "matched", matched_with: generatedRoomId }).eq("user_id", partnerId);
+
+      const { data: claimed } = await supabase
+        .from("chat_queue")
+        .update({ status: "matched", matched_with: generatedRoomId })
+        .eq("user_id", partnerId)
+        .eq("status", "waiting")
+        .select();
+
+      if (!claimed || claimed.length === 0) {
+        await supabase.from("chat_queue").upsert({ user_id: userId, status: "waiting", matched_with: null });
+        if (!isRetry) scheduleBotFallback();
+        return;
+      }
+
       await supabase.from("chat_queue").upsert({ user_id: userId, status: "matched", matched_with: generatedRoomId });
-      
+
       setRoomId(generatedRoomId);
       setStatus("matched");
       setIsBot(false);
@@ -74,18 +136,28 @@ export default function ChatClient() {
       listenForMessages(generatedRoomId);
     } else {
       await supabase.from("chat_queue").upsert({ user_id: userId, status: "waiting", matched_with: null });
-      setTimeout(async () => {
-        const { data } = await supabase
-          .from("chat_queue")
-          .select("status")
-          .eq("user_id", userId)
-          .single();
-
-        if (data?.status === "waiting") {
-          connectToBot();
-        }
-      }, 3500);
+      if (!isRetry) scheduleBotFallback();
     }
+  };
+
+  const scheduleBotFallback = () => {
+    if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
+    botTimeoutRef.current = setTimeout(async () => {
+      if (statusRef.current !== "waiting") return;
+
+      await startMatchmaking(true);
+
+      if (statusRef.current !== "waiting") return;
+      const { data } = await supabase
+        .from("chat_queue")
+        .select("status")
+        .eq("user_id", userId)
+        .single();
+
+      if (data?.status === "waiting" && statusRef.current === "waiting") {
+        connectToBot();
+      }
+    }, 2000);
   };
 
   const connectToBot = () => {
@@ -101,10 +173,10 @@ export default function ChatClient() {
     if (chatListenerRef.current) supabase.removeChannel(chatListenerRef.current);
     chatListenerRef.current = supabase.channel(activeRoomId)
       .on("broadcast", { event: "shout" }, (payload: any) => {
-        if (payload.payload.senderId !== userId && payload.payload.type === "msg") {
+        if (payload.payload.type === "exit") {
+          if (payload.payload.senderId !== userId) handleStrangerExit();
+        } else if (payload.payload.senderId !== userId && payload.payload.type === "msg") {
           setMessages((prev) => [...prev, { sender: "stranger", text: payload.payload.text }]);
-        } else if (payload.payload.type === "exit") {
-          handleStrangerExit();
         }
       }).subscribe();
   };
@@ -133,20 +205,29 @@ export default function ChatClient() {
     }
   };
 
-  const handleSkip = () => {
-    if (!isBot && roomId) {
-      chatListenerRef.current?.send({
-        type: "broadcast", event: "shout",
-        payload: { senderId: userId, type: "exit" }
-      });
+  const handleSkip = async () => {
+    if (!isBot && roomId && chatListenerRef.current) {
+      try {
+        await chatListenerRef.current.send({
+          type: "broadcast", event: "shout",
+          payload: { senderId: userId, type: "exit" }
+        });
+      } catch (e) {
+        console.error("Failed to send exit signal:", e);
+      }
     }
+
+    await supabase.from("chat_queue").upsert({ user_id: userId, status: "idle", matched_with: null });
+
+    setRoomId(null);
     startMatchmaking();
   };
 
   const handleStrangerExit = () => {
-    setMessages((prev) => [...prev, { sender: "system", text: "🏃‍♂️ Stranger left the chat." }]);
+    setMessages((prev) => [...prev, { sender: "system", text: "🏃‍♂️ Stranger left the chat. Finding you a new match..." }]);
     setStatus("idle");
     setRoomId(null);
+    startMatchmaking();
   };
 
   const handleReport = async () => {
@@ -179,15 +260,18 @@ export default function ChatClient() {
     startMatchmaking();
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
+      if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
       if (chatListenerRef.current) supabase.removeChannel(chatListenerRef.current);
+      if (queueListenerRef.current) supabase.removeChannel(queueListenerRef.current);
+      supabase.from("chat_queue").upsert({ user_id: userId, status: "idle", matched_with: null });
     };
   }, [userId]);
 
   return (
-    <div style={{ 
-      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, 
-      backgroundColor: "#0f172a", color: "#f8fafc", 
-      display: "flex", flexDirection: "column", overflow: "hidden", 
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: "#0f172a", color: "#f8fafc",
+      display: "flex", flexDirection: "column", overflow: "hidden",
       fontFamily: "system-ui, sans-serif", touchAction: "manipulation"
     }}>
       <header style={{ backgroundColor: "#1e293b", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #334155" }}>
@@ -220,7 +304,7 @@ export default function ChatClient() {
       <div style={{ backgroundColor: "#1e293b", padding: "12px", borderTop: "1px solid #334155" }}>
         <div style={{ display: "flex", gap: "8px", maxWidth: "640px", margin: "0 auto" }}>
           <button onClick={handleSkip} style={{ padding: "0 18px", backgroundColor: "#ef4444", color: "white", border: "none", borderRadius: "12px", fontWeight: "bold" }}>Next</button>
-          
+
           <input
             ref={inputRef}
             value={message}
@@ -230,7 +314,7 @@ export default function ChatClient() {
             placeholder={isBot ? "Chatting with AI Bot..." : "Wait until connected..."}
             style={{ flex: 1, padding: "12px 16px", backgroundColor: "#0f172a", border: "1px solid #475569", borderRadius: "12px", color: "#fff", fontSize: "16px" }}
           />
-          
+
           <button onClick={sendMessage} disabled={status !== "matched" && status !== "bot"} style={{ padding: "0 24px", backgroundColor: "#2563eb", color: "white", border: "none", borderRadius: "12px", fontWeight: "bold" }}>Send</button>
         </div>
 
