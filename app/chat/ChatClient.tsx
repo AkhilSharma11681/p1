@@ -103,6 +103,16 @@ export default function ChatClient() {
       if (statusRef.current !== "waiting") return;
     }
 
+    // Clean up stale matched/idle rows older than 3 minutes so ghost sessions
+    // from closed tabs do not appear as valid partners.
+    const staleTime = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    await supabase
+      .from("chat_queue")
+      .delete()
+      .neq("user_id", userId)
+      .neq("status", "waiting")
+      .lt("created_at", staleTime);
+
     const { data: waitingUsers } = await supabase
       .from("chat_queue")
       .select("user_id")
