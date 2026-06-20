@@ -28,6 +28,9 @@ export const metadata: Metadata = {
     "free chat no registration",
     "meet strangers online india"
   ],
+  verification: {
+    google: "vIqC6PN4TCVYkUNXYN41MYeqI_ie6Bw4Y9baRdytBZ8",
+  },
   authors: [{ name: "OmegleV" }],
   openGraph: {
     title: "OmegleV - Free Random Chat With Strangers in India",
