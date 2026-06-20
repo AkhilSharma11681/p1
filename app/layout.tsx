@@ -53,6 +53,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
         <meta name="theme-color" content="#0f172a" />
       </head>
+      <head>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-QV945G4DDD"></script>
+        <script dangerouslySetInnerHTML={{ __html: `
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-QV945G4DDD');
+        ` }} />
+      </head>
       <body>{children}</body>
     </html>
   );
